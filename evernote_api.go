@@ -9,30 +9,26 @@ import (
 	"os"
 )
 
-func GetTemplate(name string, EvernoteAuthorToken string, ClientKey string, ClientSecret string) string {
-
-	ns, err := GetNotestoreFromCredentials(EvernoteAuthorToken, ClientKey, ClientSecret)
-
-	notebookGUID, err := GetNotebookFromNotestoreByName(ns, name, EvernoteAuthorToken)
+func GetNoteFromNotebookByName(NoteName string, NotebookName string, NoteStore *notestore.NoteStoreClient, EvernoteAuthorToken string) string {
+	notebookGUID, err := GetNotebookFromNotestoreByName(EvernoteAuthorToken, NoteStore, NotebookName)
 	if notebookGUID == nil {
-		fmt.Fprintf(os.Stderr, "Notebook with name: %s not found.", name)
+		fmt.Fprintf(os.Stderr, "Notebook with name: %s not found.", NotebookName)
 	}
 
 	// construct query to get the template note
 	ascending := false
 	var buffer bytes.Buffer
 	buffer.WriteString("intitle:")
-	// the name for the template is, by default Template. This might be subject to change or customization in the future.
-	buffer.WriteString("Template")
+	// the name for the template is, by default, Template. This might be subject to change or customization in the future.
+	buffer.WriteString(NoteName)
 	query := buffer.String()
 	filter := &notestore.NoteFilter{Words: &query, NotebookGuid: notebookGUID, Ascending: &ascending}
-	fmt.Println(filter)
 
 	// search the notestore
 	var resultSpec notestore.NotesMetadataResultSpec
 	includeUpdateSequenceNum := true
 	resultSpec.IncludeUpdateSequenceNum = &includeUpdateSequenceNum
-	metadatas, err := ns.FindNotesMetadata(EvernoteAuthorToken, filter, 0, 1, &resultSpec)
+	metadatas, err := NoteStore.FindNotesMetadata(EvernoteAuthorToken, filter, 0, 1, &resultSpec)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Fatal error: %s", err.Error())
 		os.Exit(1)
@@ -40,11 +36,11 @@ func GetTemplate(name string, EvernoteAuthorToken string, ClientKey string, Clie
 
 	// the result should be just the single notebook
 	if len(metadatas.GetNotes()) == 0 {
-		fmt.Fprintf(os.Stderr, "Fatal error: No template found in notestore.\n")
+		fmt.Fprintf(os.Stderr, "Fatal error: No %s found in notebook %s.\n", NoteName, NotebookName)
 		os.Exit(1)
 	}
 	metanote := metadatas.GetNotes()[0]
-	template, err := ns.GetNote(EvernoteAuthorToken, metanote.GUID, true, false, false, false)
+	template, err := NoteStore.GetNote(EvernoteAuthorToken, metanote.GUID, true, false, false, false)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Fatal error: %s", err.Error())
 		os.Exit(1)
@@ -66,19 +62,19 @@ func GetNotestoreFromCredentials(EvernoteAuthorToken string, ClientKey string, C
 		fmt.Fprintf(os.Stderr, "Error: %s", err.Error())
 		os.Exit(1)
 	}
-	fmt.Println(url)
-	ns, err := c.GetNoteStoreWithURL(url)
+
+	NoteStore, err := c.GetNoteStoreWithURL(url)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s", err.Error())
 		os.Exit(1)
 	}
-	return ns, nil
+	return NoteStore, nil
 }
 
 // Gets the id of a notebook based on the name from the notestore
 // Note that this function also apparently requires the developer token
-func GetNotebookFromNotestoreByName(ns *notestore.NoteStoreClient, name string, EvernoteAuthorToken string) (*types.GUID, error) {
-	notebooks, err := ns.ListNotebooks(EvernoteAuthorToken)
+func GetNotebookFromNotestoreByName(EvernoteAuthorToken string, NoteStore *notestore.NoteStoreClient, name string) (*types.GUID, error) {
+	notebooks, err := NoteStore.ListNotebooks(EvernoteAuthorToken)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Fatal error: %s", err.Error())
 		os.Exit(1)
@@ -93,4 +89,18 @@ func GetNotebookFromNotestoreByName(ns *notestore.NoteStoreClient, name string, 
 		}
 	}
 	return notebookGUID, nil
+}
+
+// Create a new entry
+func CreateNewEntry(EvernoteAuthorToken string, NoteStore *notestore.NoteStoreClient, notebook *types.GUID, contents string) {
+	note := types.Note{}
+	title := "test"
+	notebookGuid := string(*notebook) // for some reason, note.NotebookGuid only accepts *string. *types.GUID is effectively *string, except with another name.
+
+	note.Content = &contents
+	note.Title = &title
+	note.NotebookGuid = &notebookGuid
+
+	// Create the notebook
+	NoteStore.CreateNote(EvernoteAuthorToken, &note)
 }
