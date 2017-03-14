@@ -2,17 +2,17 @@ package evernote_journal
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"github.com/dreampuf/evernote-sdk-golang/client"
 	"github.com/dreampuf/evernote-sdk-golang/notestore"
 	"github.com/dreampuf/evernote-sdk-golang/types"
-	"os"
 )
 
 // Get the notestore for the user based on the developer token(EvernoteAuthorToken), evernote api key, evernote api secret
 // All 3 must be first acquired from evernote to be able to use.
 func GetNotestoreFromCredentials(EvernoteAuthorToken string, ClientKey string, ClientSecret string) (*notestore.NoteStoreClient, error) {
-	c := client.NewClient(ClientKey, ClientSecret, client.SANDBOX)
+	c := client.NewClient(ClientKey, ClientSecret, client.PRODUCTION)
 	us, err := c.GetUserStore()
 	if err != nil {
 		return nil, err
@@ -45,11 +45,16 @@ func GetNotebookFromNotestoreByName(EvernoteAuthorToken string, NoteStore *notes
 			break
 		}
 	}
-	return notebookGUID, nil
+	if notebookGUID == nil {
+		return nil, errors.New(fmt.Sprintf("No notebook with name %s found.", name))
+	} else {
+		return notebookGUID, nil
+	}
 }
 
 func GetNoteFromNotebookByName(EvernoteAuthorToken string, NoteStore *notestore.NoteStoreClient, notebook *types.GUID, NoteName string) (string, error) {
 	// construct query to get the template note
+	var empty string
 	ascending := false
 	var buffer bytes.Buffer
 	buffer.WriteString("intitle:")
@@ -64,26 +69,23 @@ func GetNoteFromNotebookByName(EvernoteAuthorToken string, NoteStore *notestore.
 	resultSpec.IncludeUpdateSequenceNum = &includeUpdateSequenceNum
 	metadatas, err := NoteStore.FindNotesMetadata(EvernoteAuthorToken, filter, 0, 1, &resultSpec)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal error: %s", err.Error())
-		os.Exit(1)
+		return "", err
 	}
 
 	// the result should be just the single notebook
 	if len(metadatas.GetNotes()) == 0 {
-		fmt.Fprintf(os.Stderr, "Fatal error: No %s found in notebook.\n", NoteName)
-		os.Exit(1)
+		return empty, nil
 	}
 	metanote := metadatas.GetNotes()[0]
 	template, err := NoteStore.GetNote(EvernoteAuthorToken, metanote.GUID, true, false, false, false)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal error: %s", err.Error())
-		os.Exit(1)
+		return "", err
 	}
 	return *template.Content, nil
 }
 
 // Create a new entry
-func CreateNewNote(EvernoteAuthorToken string, NoteStore *notestore.NoteStoreClient, notebook *types.GUID, title string, contents string) {
+func CreateNewNote(EvernoteAuthorToken string, NoteStore *notestore.NoteStoreClient, notebook *types.GUID, title string, contents string) error {
 	note := types.Note{}
 	notebookGuid := string(*notebook) // for some reason, note.NotebookGuid only accepts *string. *types.GUID is effectively *string, except with another name.
 
@@ -92,5 +94,6 @@ func CreateNewNote(EvernoteAuthorToken string, NoteStore *notestore.NoteStoreCli
 	note.NotebookGuid = &notebookGuid
 
 	// Create the notebook
-	NoteStore.CreateNote(EvernoteAuthorToken, &note)
+	_, err := NoteStore.CreateNote(EvernoteAuthorToken, &note)
+	return err
 }
