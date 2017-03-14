@@ -73,13 +73,13 @@ func CreateNewJournalEntry(EvernoteAuthorToken string, ClientKey string, ClientS
 
 	fmt.Println(contents)
 
-	// err = CreateNewNote(EvernoteAuthorToken, ns, notebook, today.Format(DateFormat), template)
+	err = CreateNewNote(EvernoteAuthorToken, ns, notebook, today.Format(DateFormat), template)
 
-	// if err != nil {
-	// 	return err
-	// }
+	if err != nil {
+		return err
+	}
 
-	// fmt.Printf("Journal for %s successfully created\n", today.Format(DateFormat))
+	fmt.Printf("Journal for %s successfully created\n", today.Format(DateFormat))
 
 	return nil
 }
@@ -113,14 +113,14 @@ func convertToSectionList(text string, delimiter string) []Section {
 	return results
 }
 
-func findSectionByTitle(sections []Section, title string) Section {
+func findSectionByTitle(sections []Section, title string) (Section, error) {
 	for _, section := range sections {
 		if section.Title == title {
-			return section
+			return section, nil
 		}
 	}
-	fmt.Printf("No section with name %s found\n", title)
-	return Section{}
+	fmt.Printf("Warning: Section with title %s not found.\n", title)
+	return Section{}, errors.New(fmt.Sprintf("Section with title %s not found.", title))
 }
 
 func indexInSlice(a string, list []string) int {
@@ -140,8 +140,33 @@ func divideHeaderAndBody(ennote string) (string, string) {
 	return header, body
 }
 
+func fillTemplateBody(templateSections []Section, noteSections []Section, sectionsToReplace []string, sectionsToReplaceWith []string) string {
+	contents := bytes.Buffer{}
+	for _, section := range templateSections {
+		//fmt.Printf("Section %d\n__________________\n", j)
+		i := indexInSlice(section.Title, sectionsToReplace)
+		if utf8.RuneCountInString(section.Title) > 0 {
+			//fmt.Printf("Title Element: \n%s\n\n", section.TitleDOMElement)
+			contents.WriteString(section.TitleDOMElement)
+			if i > -1 {
+				// find the section to replace to in yesteday's notes
+				sec, err := findSectionByTitle(noteSections, sectionsToReplaceWith[i])
+				if err == nil {
+					//fmt.Printf("Contents: %s\n\n", sec.TitleDOMElement)
+					contents.WriteString(sec.Contents)
+				}
+			} else {
+				//fmt.Printf("Contents: %s\n\n", section.Contents)
+				contents.WriteString(section.Contents)
+			}
+		}
+	}
+	return contents.String()
+}
+
 func ConstructDailyJournalContents(template string, yesterdayNote string) (string, error) {
 	contents := bytes.Buffer{}
+	var err error
 
 	header, templateBody := divideHeaderAndBody(template)
 	_, noteBody := divideHeaderAndBody(yesterdayNote)
@@ -158,36 +183,40 @@ func ConstructDailyJournalContents(template string, yesterdayNote string) (strin
 	templateSections := convertToSectionList(templateBody, delimiter)
 	noteSections := convertToSectionList(noteBody, delimiter)
 
-	for j, section := range templateSections {
-		//fmt.Printf("Section %d\n__________________\n", j)
-		i := indexInSlice(section.Title, sectionsToReplace)
-		if utf8.RuneCountInString(section.Title) > 0 {
-			//fmt.Printf("Title Element: \n%s\n\n", section.TitleDOMElement)
-			contents.WriteString(section.TitleDOMElement)
-			if i > -1 {
-				// find the section to replace to in yesteday's notes
-				sec := findSectionByTitle(noteSections, sectionsToReplaceWith[i])
-				//fmt.Printf("Contents: %s\n\n", sec.TitleDOMElement)
-				contents.WriteString(sec.Contents)
-			} else {
-				//fmt.Printf("Contents: %s\n\n", section.Contents)
-				contents.WriteString(section.Contents)
-			}
-		}
-	}
-
+	body := fillTemplateBody(templateSections, noteSections, sectionsToReplace, sectionsToReplaceWith)
 	// close the note
+	contents.WriteString(body)
 	contents.WriteString("</en-note>")
 
-	return contents.String(), nil
+	return contents.String(), err
 }
 
 func ConstructWeeklyJournalContents(template string, weeklyTemplate string, yesterdayNote string) (string, error) {
 	contents := bytes.Buffer{}
+	var err error
 	daily, err := ConstructDailyJournalContents(template, yesterdayNote)
 
 	if err != nil {
 		return template, err
 	}
 
+	header, dailyBody := divideHeaderAndBody(daily)
+
+	contents.WriteString(header)
+	contents.WriteString("<en-note>")
+	contents.WriteString(dailyBody)
+
+	// Construct Weekly Review
+	sectionsToReplace := []string{"Weekly Goal Checklist"}
+	sectionsToReplaceWith := []string{"Weekly Goal Checklist"}
+	delimiter := "<div># (.+?)</div>"
+	dailySections := convertToSectionList(dailyBody, delimiter)
+	weeklySections := convertToSectionList(weeklyTemplate, delimiter)
+
+	weeklyBody := fillTemplateBody(weeklySections, dailySections, sectionsToReplace, sectionsToReplaceWith)
+
+	contents.WriteString(weeklyBody)
+
+	contents.WriteString("</en-note>")
+	return contents.String(), err
 }
