@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	// "os"
 	"regexp"
-	// "strings"
 	"time"
 	"unicode/utf8"
 )
@@ -42,18 +40,10 @@ func CreateNewJournalEntry(EvernoteAuthorToken string, ClientKey string, ClientS
 		return errors.New("Error: No template found\n")
 	}
 
-	/* TODO: erase following code */
-	err = ioutil.WriteFile("template.xml", []byte(template), 0777)
-	/* End of TODO */
-
 	today := time.Now()
 	yesterday := today.AddDate(0, 0, -1)
 
 	yesterdayNote, err := GetNoteFromNotebookByName(EvernoteAuthorToken, ns, notebook, yesterday.Format(DateFormat))
-
-	/* TODO: erase following code */
-	err = ioutil.WriteFile("yesterday.xml", []byte(yesterdayNote), 0777)
-	/* End of TODO */
 
 	if today.Weekday().String() == "Sunday" {
 		weeklyTemplate, err := GetNoteFromNotebookByName(EvernoteAuthorToken, ns, notebook, "Weekly Template")
@@ -73,7 +63,7 @@ func CreateNewJournalEntry(EvernoteAuthorToken string, ClientKey string, ClientS
 
 	fmt.Println(contents)
 
-	err = CreateNewNote(EvernoteAuthorToken, ns, notebook, today.Format(DateFormat), template)
+	err = CreateNewNote(EvernoteAuthorToken, ns, notebook, today.Format(DateFormat), contents)
 
 	if err != nil {
 		return err
@@ -116,6 +106,7 @@ func convertToSectionList(text string, delimiter string) []Section {
 func findSectionByTitle(sections []Section, title string) (Section, error) {
 	for _, section := range sections {
 		if section.Title == title {
+			fmt.Println(section)
 			return section, nil
 		}
 	}
@@ -142,21 +133,17 @@ func divideHeaderAndBody(ennote string) (string, string) {
 
 func fillTemplateBody(templateSections []Section, noteSections []Section, sectionsToReplace []string, sectionsToReplaceWith []string) string {
 	contents := bytes.Buffer{}
-	for _, section := range templateSections {
-		//fmt.Printf("Section %d\n__________________\n", j)
+	for j, section := range templateSections {
 		i := indexInSlice(section.Title, sectionsToReplace)
 		if utf8.RuneCountInString(section.Title) > 0 {
-			//fmt.Printf("Title Element: \n%s\n\n", section.TitleDOMElement)
 			contents.WriteString(section.TitleDOMElement)
 			if i > -1 {
 				// find the section to replace to in yesteday's notes
 				sec, err := findSectionByTitle(noteSections, sectionsToReplaceWith[i])
 				if err == nil {
-					//fmt.Printf("Contents: %s\n\n", sec.TitleDOMElement)
 					contents.WriteString(sec.Contents)
 				}
 			} else {
-				//fmt.Printf("Contents: %s\n\n", section.Contents)
 				contents.WriteString(section.Contents)
 			}
 		}
