@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"regexp"
 	"time"
 	"unicode/utf8"
@@ -74,12 +73,18 @@ func CreateNewJournalEntry(EvernoteAuthorToken string, ClientKey string, ClientS
 	return nil
 }
 
+// A class representing one section (ex. Reflections, Daily Goals, etc.) in the Journal
 type Section struct {
 	Title           string
 	TitleDOMElement string
 	Contents        string
 }
 
+// A function to parse the journal and convert it to a list of sections.
+// Each section begins with a header represented by the delimiter as a regular expression.
+// ex. <div># (.+?)</div>
+// Where the substring encapsulated by parens represents the title.
+// The section is followed by the contents, that span up to the beginning of the next section header.
 func convertToSectionList(text string, delimiter string) []Section {
 	re := regexp.MustCompile(delimiter)
 	indexes := re.FindAllStringIndex(text, -1)
@@ -103,6 +108,7 @@ func convertToSectionList(text string, delimiter string) []Section {
 	return results
 }
 
+// From a list of sections, finds and returns the section with the given title.
 func findSectionByTitle(sections []Section, title string) (Section, error) {
 	for _, section := range sections {
 		if section.Title == title {
@@ -114,6 +120,7 @@ func findSectionByTitle(sections []Section, title string) (Section, error) {
 	return Section{}, errors.New(fmt.Sprintf("Section with title %s not found.", title))
 }
 
+// Same as python method index of list
 func indexInSlice(a string, list []string) int {
 	for i, b := range list {
 		if b == a {
@@ -123,6 +130,7 @@ func indexInSlice(a string, list []string) int {
 	return -1
 }
 
+// Divides a notebook file into its header and contents, and returns each as a string
 func divideHeaderAndBody(ennote string) (string, string) {
 	re := regexp.MustCompile("<en-note>(.*)</en-note>")
 	indexes := re.FindAllStringIndex(ennote, -1)
@@ -131,9 +139,16 @@ func divideHeaderAndBody(ennote string) (string, string) {
 	return header, body
 }
 
-func fillTemplateBody(templateSections []Section, noteSections []Section, sectionsToReplace []string, sectionsToReplaceWith []string) string {
+// Takes a template journal, and populates its contents with the contents of another notebook when required.
+// Replacement happens when the title of a section in the template journal is included in sectionsToReplace.
+// Then, the contents of the section in the notebook with the title in sectionsToReplaceWith with the corresponding index is used to populate the contents.
+func fillTemplateBody(templateBody string, noteBody string, sectionsToReplace []string, sectionsToReplaceWith []string, delimiter string) string {
 	contents := bytes.Buffer{}
-	for j, section := range templateSections {
+
+	templateSections := convertToSectionList(templateBody, delimiter)
+	noteSections := convertToSectionList(noteBody, delimiter)
+
+	for _, section := range templateSections {
 		i := indexInSlice(section.Title, sectionsToReplace)
 		if utf8.RuneCountInString(section.Title) > 0 {
 			contents.WriteString(section.TitleDOMElement)
@@ -167,10 +182,7 @@ func ConstructDailyJournalContents(template string, yesterdayNote string) (strin
 
 	delimiter := "<div># (.+?)</div>"
 
-	templateSections := convertToSectionList(templateBody, delimiter)
-	noteSections := convertToSectionList(noteBody, delimiter)
-
-	body := fillTemplateBody(templateSections, noteSections, sectionsToReplace, sectionsToReplaceWith)
+	body := fillTemplateBody(templateBody, noteBody, sectionsToReplace, sectionsToReplaceWith, delimiter)
 	// close the note
 	contents.WriteString(body)
 	contents.WriteString("</en-note>")
@@ -188,6 +200,7 @@ func ConstructWeeklyJournalContents(template string, weeklyTemplate string, yest
 	}
 
 	header, dailyBody := divideHeaderAndBody(daily)
+	_, weeklyBody := divideHeaderAndBody(weeklyTemplate)
 
 	contents.WriteString(header)
 	contents.WriteString("<en-note>")
@@ -197,12 +210,10 @@ func ConstructWeeklyJournalContents(template string, weeklyTemplate string, yest
 	sectionsToReplace := []string{"Weekly Goal Checklist"}
 	sectionsToReplaceWith := []string{"Weekly Goal Checklist"}
 	delimiter := "<div># (.+?)</div>"
-	dailySections := convertToSectionList(dailyBody, delimiter)
-	weeklySections := convertToSectionList(weeklyTemplate, delimiter)
 
-	weeklyBody := fillTemplateBody(weeklySections, dailySections, sectionsToReplace, sectionsToReplaceWith)
+	body := fillTemplateBody(weeklyBody, dailyBody, sectionsToReplace, sectionsToReplaceWith, delimiter)
 
-	contents.WriteString(weeklyBody)
+	contents.WriteString(body)
 
 	contents.WriteString("</en-note>")
 	return contents.String(), err
