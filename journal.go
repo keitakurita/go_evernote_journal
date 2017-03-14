@@ -60,8 +60,6 @@ func CreateNewJournalEntry(EvernoteAuthorToken string, ClientKey string, ClientS
 		}
 	}
 
-	fmt.Println(contents)
-
 	err = CreateNewNote(EvernoteAuthorToken, ns, notebook, today.Format(DateFormat), contents)
 
 	if err != nil {
@@ -112,7 +110,6 @@ func convertToSectionList(text string, delimiter string) []Section {
 func findSectionByTitle(sections []Section, title string) (Section, error) {
 	for _, section := range sections {
 		if section.Title == title {
-			fmt.Println(section)
 			return section, nil
 		}
 	}
