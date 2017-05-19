@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"regexp"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -39,10 +42,17 @@ func CreateNewJournalEntry(EvernoteAuthorToken string, ClientKey string, ClientS
 		return errors.New("Error: No template found\n")
 	}
 
+	ioutil.WriteFile("template.xml", []byte(template), 0644)
+
 	today := time.Now()
 	yesterday := today.AddDate(0, 0, -1)
 
 	yesterdayNote, err := GetNoteFromNotebookByName(EvernoteAuthorToken, ns, notebook, yesterday.Format(DateFormat))
+
+	if err != nil || yesterdayNote == "" {
+		err = CreateNewNote(EvernoteAuthorToken, ns, notebook, today.Format(DateFormat), template)
+		return err
+	}
 
 	if today.Weekday().String() == "Sunday" {
 		weeklyTemplate, err := GetNoteFromNotebookByName(EvernoteAuthorToken, ns, notebook, "Weekly Template")
@@ -129,7 +139,7 @@ func indexInSlice(a string, list []string) int {
 
 // Divides a notebook file into its header and contents, and returns each as a string
 func divideHeaderAndBody(ennote string) (string, string) {
-	re := regexp.MustCompile("<en-note>(.*)</en-note>")
+	re := regexp.MustCompile("<en-note.*?>(.*)</en-note>")
 	indexes := re.FindAllStringIndex(ennote, -1)
 	header := ennote[0:indexes[0][0]]
 	body := re.FindStringSubmatch(ennote)[1]
@@ -145,21 +155,26 @@ func fillTemplateBody(templateBody string, noteBody string, sectionsToReplace []
 	templateSections := convertToSectionList(templateBody, delimiter)
 	noteSections := convertToSectionList(noteBody, delimiter)
 
+	// Filling the contetns
 	for _, section := range templateSections {
 		i := indexInSlice(section.Title, sectionsToReplace)
 		if utf8.RuneCountInString(section.Title) > 0 {
+			// replace the contents
 			contents.WriteString(section.TitleDOMElement)
 			if i > -1 {
 				// find the section to replace to in yesteday's notes
 				sec, err := findSectionByTitle(noteSections, sectionsToReplaceWith[i])
 				if err == nil {
 					contents.WriteString(sec.Contents)
+				} else {
+					contents.WriteString(section.Contents)
 				}
 			} else {
 				contents.WriteString(section.Contents)
 			}
 		}
 	}
+
 	return contents.String()
 }
 
@@ -214,4 +229,22 @@ func ConstructWeeklyJournalContents(template string, weeklyTemplate string, yest
 
 	contents.WriteString("</en-note>")
 	return contents.String(), err
+}
+
+func ManageReflections(statContents string, filename string) {
+	f, err := os.OpenFile(filename, os.O_APPEND, 0666)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	dateString := time.Now().AddDate(0, 0, -1).Format("2016/01/02")
+
+	// Log the data to a csv file
+	internalSections := convertToSectionList(statContents, "<div>#([#$] .+?)</div>")
+	for _, section := range internalSections {
+		if strings.HasPrefix("$", section.Title) {
+			fmt.Println(dateString + "," + section.Contents)
+		}
+	}
 }
